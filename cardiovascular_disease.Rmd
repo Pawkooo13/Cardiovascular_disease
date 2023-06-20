@@ -1,0 +1,943 @@
+---
+title: "Choroby układu krążenia"
+author: "Paweł Strzałecki"
+output: pdf_document
+date: "2023-02-03"
+---
+
+Źródło danych:
+https://www.kaggle.com/datasets/sulianova/cardiovascular-disease-dataset
+
+Zmienna         Opis
+--------        ----
+**age**         - wiek (w dniach)
+**height**      - wysokośc (w cm)
+**weight**      - waga (w kg)
+**gender**      - płeć (1 - kobieta, 2 - mężczyzna)
+**ap_hi**       - skurczowe ciśnienie krwi
+**ap_lo**       - rozkurczowe ciśnienie krwi
+**cholesterol** - cholesterol (1 - norma, 2 - powyżej normy, 3 -                     dużo powyzej normy)
+**gluc**        - glukoza (1 - norma, 2 - powyzej normy, 3 - duzo                    powyżej normy)
+**smoke**       - 0 - pacjent niepalący, 1 - pacjent palący
+**alco**        - 0 - pacjent nie spożywa alkoholu, 1 - pacjent                      spożywa alkohol
+**active**      - 0 - pacjent nie jest aktywny fizycznie, 1 -                        pacjent jest aktywny fizycznie
+**cardio**      - 0 - pacjent nie ma chorób układu krążenia,
+                  1 - pacjent ma choroby układu krążenia
+
+- age, height, weight, gender - informacje faktyczne
+- ap_hi, ap_ho, cholesterol, gluc - rezultat badań medycznych
+- smoke, alco, active - informacje subiektywne pacjenta
+
+# CZĘŚĆ I
+
+**HIPOTEZA:**
+Ciśnienie skurczowe krwi, a choroby układu krążenia. Czy zdrowy styl życia redukuje ciśnienie i zmniejsza efekt chorób układu krążenia?
+
+```{r}
+library('dplyr')
+library('ggplot2')
+library('GGally')
+library('statmod')
+library('ResourceSelection')
+```
+
+## Wczytanie i eksploracja danych
+
+```{r}
+data = read.csv('cardio_train.csv', sep=';')
+```
+
+```{r}
+head(data)
+summary(data)
+```
+
+Wiek pacjenta jest podany w dniach. Dla lepszej czytelności danych zamienimy dni na lata.
+
+```{r}
+data['age'] = round(data['age']/365)
+```
+
+Niektóre kolumny zawierają nierealne wartości, trzeba zatem wyczyścic dane.
+
+```{r}
+data = filter(data, height >= 140,
+       weight >= 40,
+       ap_hi >= 90 & ap_hi <= 150,
+       ap_lo >= 60 & ap_lo <= 100)
+```
+
+```{r}
+summary(data)
+```
+
+```{r}
+data = data %>% 
+  mutate(cholesterol = factor(cholesterol, levels = c('norm' = 1, 'a_norm' = 2, 'wa_norm' = 3), labels = c('norm', 'a_norm', 'aw_norm'))) %>%
+  mutate(gluc = factor(gluc, levels = c('norm' = 1, 'a_norm' = 2, 'wa_norm' = 3), labels = c('norm', 'a_norm', 'wa_norm'))) %>%
+  mutate(smoke = factor(smoke, levels = c('non smoker' = 0, 'smoker' = 1), labels = c('non smoker', 'smoker'))) %>%
+  mutate(alco = factor(alco, levels = c('non alc' = 0, 'alc' = 1), labels = c('non alc', 'alc'))) %>%
+  mutate(active = factor(active, levels = c('non active' = 0, 'active' = 1), labels = c('non active', 'active'))) %>%
+  mutate(gender = factor(gender, levels = c('female' = 1, 'male' = 2), labels = c('female', 'male'))) %>%
+  mutate(cardio = factor(cardio, levels = c('healthy' = 0, 'sick' = 1), labels = c('healthy', 'sick')))
+
+head(data)
+```
+
+Kolumna z id pacjenta nie będzie potrzebna w dalszej analizie postawionej hipotezy, dlatego zostanie ona usunięta.
+
+```{r}
+data = select(data, -id)
+```
+
+```{r}
+summary(data)
+```
+
+- Grupa badanych pacjentów jest w przedziale wiekowym 30-65 lat.
+- Większość pacjentów jest płci żeńskiej.
+- Wzrost pacjentów to przedział od 140cm do 250cm wzrostu.
+- Waga pacjentów wynosi od 40 do 200kg.
+- Większość pacjentów ma cholesterol w normie, ok. 8200 osób ma      poziom cholesterolu powyżej normy, a ok. 7000 osób dużo powyżej    normy.
+- Większość pacjentów ma poziom glukozy w normie, ok. 4400 osób      powyżej normy, a ok. 4800 osób dużo powyżej normy.
+- Ok. 58000 pacjentów to osoby nie palące, 5500 pacjentów to osoby   palące.
+- Grupa pacjentów nie pijących alkoholu liczy 60300 osób. 3300       pacjentów spożywa alkohol.
+- Ok. 51100 pacjentów jest aktywna fizycznie. Osób nieaktywnych      fizycznie jest 12500.
+- 34000 pacjentów nie posiada choroby układu krążenia, natomiast     osób chorych jest ok. 30000.
+
+## Analiza poszczególnych zmiennych i ich wpływu na ciśnienie skurczowe krwi
+
+```{r}
+plots = ggpairs(data)
+ggsave('wykresy.jpeg', plots)
+```
+
+Wsytępuje duża korelacja między ciśnieniem skurczowym, a rozkurczowym krwi ~ 0.7.
+
+### Cardio
+
+```{r}
+ggplot(data, aes(x = ap_hi, fill = cardio)) + geom_histogram()
+```
+
+```{r}
+ggplot(data, aes(x = cardio, y = ap_hi)) + geom_boxplot()
+```
+
+```{r}
+summary(lm(ap_hi ~ cardio, data = data))
+```
+
+Osoby mające choroby układu krążenia mają wyższe ciśnienie skurczowe krwi o 10 mm/Hg od osób zdrowych.
+
+```{r}
+ggplot(data, aes(x = cardio, y = ap_lo)) + geom_boxplot()
+```
+
+```{r}
+summary(lm(ap_lo ~ cardio, data = data))
+```
+
+Osoby mające choroby układu krążenia mają wyższe ciśnienie rozkurczowe krwi o 5 mm/Hg od osób zdrowych.
+
+### Gender
+
+```{r}
+ggplot(data, aes(x = gender, y = ap_hi, fill = cardio)) + geom_boxplot()
+```
+
+```{r}
+summary(lm(ap_hi ~ gender, data = data))
+```
+
+Średnie ciśnienie skurczowe krwi różni się w zależności od płci.
+Średnie ciśnienie skurczowe krwi u kobiet wynosi 123 mm/Hg, natomiast u meżczyzn jest to wartość większa o ok. 1.7 mm/Hg.
+Testy statystyczne wskazują na dużą istotność tej różnicy, zatem w dalszej analizie trzeba uwzględnić wyniki w zależności od płci.
+
+```{r}
+interaction.plot(x.factor = data$cardio,
+                 trace.factor = data$gender,
+                 response = data$ap_hi)
+```
+
+Brak interakcji.
+
+```{r}
+summary(lm(ap_hi ~ cardio + gender, data = data))
+```
+
+Zdrowa kobieta ma średnio ciśnienie skurczowe krwi na poziomie 118 mm/Hg. Chora kobieta natomiast ma już ciśnienie krwi ok. 129 mm/Hg.
+
+Zdrowy mężczyzna ma średnio ciśenieni skurczowe krwi na poziomie 120 mm/Hg. Chory mężczyzna natomiast ma ciśnienie krwi ok. 131 mm/Hg.
+
+### Active
+
+Mówi się, że prowadzenie zdrowego stylu życia pomaga zredukować ryzyko chorób. Można zatem sprawdzić jak różnią się wyniki pacjentów, którzy byli aktywni fizycznie.
+
+```{r}
+data_male = filter(data, gender == 'male')
+data_female = filter(data, gender == 'female')
+
+ggplot(data_male, aes(x = cardio, y = ap_hi, fill = active)) + geom_boxplot()
+
+ggplot(data_female, aes(x = cardio, y = ap_hi, fill = active)) + geom_boxplot()
+```
+
+```{r}
+interaction.plot(x.factor = data$active,
+                 trace.factor = data$gender,
+                 response = data$ap_hi)
+```
+
+Brak interakcji.
+
+```{r}
+summary(lm(ap_hi ~ cardio + gender + active, data = data))
+```
+
+Aktywność fizyczna wpływa istotnie na obniżenie ciśnienia skurczowego krwi. Z powyższego wykresu możemy odczytać, że aktywność fizyczna w większym stopniu redukuje ciśnienie skurczowe krwi wśród mężczyzn, niż wśród kobiet. 
+
+### Smoke
+
+```{r}
+ggplot(data_male, aes(x = cardio, y = ap_hi, fill = smoke)) + geom_boxplot()
+
+ggplot(data_female, aes(x = cardio, y = ap_hi, fill = smoke)) + geom_boxplot()
+```
+
+```{r}
+interaction.plot(x.factor = data$smoke,
+                 trace.factor = data$gender,
+                 response = data$ap_hi)
+```
+
+Brak interakcji.
+
+```{r}
+summary(lm(ap_hi ~ cardio + gender + smoke, data = data))
+```
+
+Efekt palenia jest istotny statystycznie. Osoby palące mają większe ciśnienie skurczowe krwi o ok. 0.6 mm/Hg.
+
+### Alco
+
+```{r}
+ggplot(data_male, aes(x = cardio, y = ap_hi, fill = alco)) + geom_boxplot()
+
+ggplot(data_female, aes(x = cardio, y = ap_hi, fill = alco)) + geom_boxplot()
+```
+
+```{r}
+interaction.plot(x.factor = data$alco,
+                 trace.factor = data$gender,
+                 response = data$ap_hi)
+```
+
+Brak interakcji.
+
+```{r}
+summary(lm(ap_hi ~ cardio + gender + alco, data = data))
+```
+
+Spożywanie alkoholu ma bardzo istotny wpływ na ciśnienie skurczowe krwi. Osoby spożywające duże ilości alkoholu mają ciśnienie skurczowe krwi większe o aż 1.3 mm/Hg.  
+
+### Cholesterol
+
+```{r}
+ggplot(data_male, aes(x = cardio, y = ap_hi, fill = cholesterol)) + geom_boxplot()
+
+ggplot(data_female, aes(x = cardio, y = ap_hi, fill = cholesterol)) + geom_boxplot()
+```
+
+```{r}
+interaction.plot(x.factor = data$cholesterol,
+                 trace.factor = data$gender,
+                 response = data$ap_hi)
+```
+
+```{r}
+anova(lm(ap_hi ~ cardio + gender + cholesterol, data = data),
+      lm(ap_hi ~ cardio + gender * cholesterol, data = data))
+```
+
+Zachodzi interakcja.
+
+```{r}
+summary(lm(ap_hi ~ cardio + gender * cholesterol, data = data))
+```
+
+Z racji interakcji, wpływ cholesterolu na ciśnienie skurczowe krwi jest inny dla kobiet i inny dla mężczyzn.
+
+Kobiety z poziomem cholesterolu powyżej normy mają ciśnienie skurczowe krwi wyższe o 2 mm/Hg, natomiast kobiety z cholesterolem dużo powyżej normy mają średnio ciśnienie skurczowe krwi wyższe aż o 4 mm/Hg.  
+
+Sytuacja wygląda inaczej w przypadku mężczyzn.
+
+Mężczyźni z poziomem cholesterolu powyżej normy mają ciśnienie skurczowe krwi wyższe o ok. 3 mm/Hg, natomiast mężczyźni z cholesterolem dużo powyżej normy mają średnio ciśnienie skurczowe krwi wyższe o ok. 4.6 mm/Hg. 
+
+Widać znaczną różnicę w oddziaływaniu cholesterolu na ciśnienie krwi wśród kobiet, a wśród mężczyzn. Przyrost u kobiet między wysokim poziomem cholesterolu, a bardzo wysokim wyniósł 2 mm/Hg, natomiast przyrost w grupie mężczyzn wyniósł 1.6 mm/Hg. Powyższy wykres idealnie to obrazuje.
+
+### Gluc
+
+```{r}
+ggplot(data_male, aes(x = cardio, y = ap_hi, fill = gluc)) + geom_boxplot()
+
+ggplot(data_female, aes(x = cardio, y = ap_hi, fill = gluc)) + geom_boxplot()
+```
+
+```{r}
+interaction.plot(x.factor = data$gluc,
+                 trace.factor = data$gender,
+                 response = data$ap_hi)
+```
+
+Zachodzi interakcja.
+
+```{r}
+summary(lm(ap_hi ~ cardio + gender * gluc, data = data))
+```
+
+Wpływ poziomu glukozy powyżej normy jest taki sam wśród mężczyzn jak i kobiet. Znaczne różnice pojawiają się jeżeli poziom glukozy jest dużo powyżej normy. Wtedy wpływ poziomu glukozy jest zależny od płci.
+
+Kobieta z poziomem glukozy we krwi powyżej normy ma średnio większe ciśnienie skurczowe krwi o 1.6 mm/Hg, natomiast gdy poziom glukozy jest dużo powyżej normy to ciśnienie skurczowe krwi jest większe o aż 2.5 mm/Hg.
+
+Meżczyzna tak samo jak kobieta, ma średnio większe ciśnienie skurczowe krwi o 1.6 mm/Hg w przypadku glukozy powyżej normy, natomiast gdy poziom glukozy we krwi dużo powyżej normy to ciśnienie skurczowe krwi jest średnio większe o 1.8 mm/Hg.
+
+Jak widać, wśród mężczyzn to czy pacjent ma poziom glukozy powyżej normy czy dużo powyżej normy nie ma aż tak dużego znaczenia, natomiast wśród kobiet ta różnica jest znacznie większa.
+
+### BMI
+
+Mając dostęp do wagi oraz wzorstu pacjentów można obliczyć wskaźnik BMI i sprawdzić wpływ wychudzenia lub otyłości na ciśnienie skurczowe krwi.
+
+```{r}
+data$BMI = data$weight/(data$height/100)^2
+summary(data$BMI)
+```
+
+```{r}
+ggplot(data, aes(x = BMI, fill = gender)) + geom_histogram()
+```
+
+Wskaźnik BMI opiera się o wzrost i wagę pacjenta. Z racji, że kobiety są niższe i lżejsze od mężczyzn, może nie będzie trzeba uwzględniać zmiennej 'gender' przy budowie modelu.
+
+```{r}
+ggplot(data, aes(x = weight, color = gender)) + geom_histogram()
+```
+
+```{r}
+ggplot(data, aes(x = height, color = gender)) + geom_histogram()
+```
+
+```{r}
+summary(lm(BMI ~ gender, data = data))
+```
+
+```{r}
+plot(lm(BMI ~ gender, data = data))
+```
+
+Zróżnicowanie w BMI względem płci jest istotne statystycznie, natomiast trudno będzie dobrze opisać płeć pacjenta za pomocą samego BMI. Przy budowie modelu będzie trzeba mimo wszystko uwzględnić płeć.
+
+```{r}
+ggplot(data = data, aes(x = BMI, y = ap_hi, group = gender, colour = gender)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+Brak interakcji - wpływ BMI na skurczowe ciśnienie krwi jest bardzo podobny zarówno wśród kobiet jak i mężczyzn.
+
+```{r}
+summary(lm(ap_hi ~ cardio + gender + BMI, data = data))
+```
+
+Współczynnik BMI jest istotny statystycznie. Jest on dodatni, zatem wraz ze wzrostem BMI wzrasta skurczowe ciśnienie krwi.
+
+### WNIOSKI
+
+- Aktywność fizyczna obniża istotnie ciśnienie skurczowe krwi.
+- Spożywanie alkoholu bardzo mocno wpływa na ciśnienie skurczowe krwi.
+- Efekt palenia ma wpływ na cisnienie skurczowe krwi.
+- Poziom cholesterolu wpływ na ciśnienie skurczowe krwi. Jego wpływ jest również zależny od płci.
+- Poziom glukozy powyżej normy ma wpływ na ciśnienie skurczowe krwi. Wpływ poziomu glukozy jest zależny od płci.
+- Im większe BMI tym większe skurczowe ciśnienie krwi.
+
+# CZĘŚĆ II
+
+**HIPOTEZA:**
+Czy wysokie skurczowe ciśnienie krwi zwiększa szanse na posiadanie choroby układu krążenia?
+
+```{r}
+data = data %>% mutate_at('cardio', as.numeric)
+data$cardio = data$cardio - 1
+```
+
+```{r}
+ggplot(data = data, aes(x = ap_hi, y = cardio)) + geom_point() + geom_smooth()
+```
+
+Wraz ze wzrostem ciśnienia skurczowego krwi rośnie prawdopodobieństwo, że dana osoba ma chorobę układu krążenia.
+
+```{r}
+ggplot(data = data, aes(x = ap_hi, fill = as.factor(cardio))) + geom_density()
+```
+
+```{r}
+xtabs(~cardio + ap_hi, data = data)
+```
+
+Osób zdrowych jest znacznie więcej w przedziale ciśnienia skurczowego krwi na poziomie < 130 mm/Hg, natomiast osób chorych jest znacznie więcej powyżej ciśnienia skurczowego 130 mm/Hg.
+
+```{r}
+model_zero = glm(cardio ~ ap_hi, family = 'binomial', data = data)
+summary(model_zero)
+```
+
+Wartości współczynników modelu wskazują na to, że wraz ze wzrostem ciśnienia skurczowego krwi wzrasta prawdopodobieństwo, że osoba ma chorobę układu krążenia.
+
+Reszta dewiancyjna wskazuje na duże niedopasowanie modelu.
+
+```{r}
+a = exp(-10 + 0.08 * 120)
+```
+
+Szansa, że osoba mająca ciśnienie skurczowe krwi na poziomie 120 mm/Hg ma chorobe układu krążenia wynosi 0.67 
+
+```{r}
+a/(1+a)
+```
+
+Prawdopodobieństwo, że osoba mająca ciśnienie skurczowe krwi na poziomie 120 mm/Hg ma chorobe układu krążenia wynosi 0.4
+
+```{r}
+exp(0.08)
+```
+
+Jeśli ciśnienie skurczowe krwi wzrośnie o 1 mm/Hg to szansa na to, że osoba ma chorobę układu krążenia wzrasta 1.08 razy
+
+```{r}
+b = exp(-10 + 0.08 * 140)
+```
+
+Szansa, że osoba mająca ciśnienie skurczowe krwi na poziomie 140 mm/Hg ma chorobe układu krążenia wynosi 3.32
+
+```{r}
+b/(b+1)
+```
+
+Prawdopodobieństwo, że osoba mająca ciśnienie skurczowe krwi na poziomie 140 mm/Hg ma chorobe układu krążenia wynosi 0.77
+
+```{r}
+preds_plot = function(model){
+ ggplot(data = data, aes(x = model$model$ap_hi)) + 
+    geom_point(aes(y = model$model$cardio)) + 
+    geom_line(aes(y = model$fitted), colour = 'blue', linewidth = 1) +
+    labs(x = 'ap_hi', y = 'cardio') 
+}
+```
+
+```{r}
+preds_plot(model_zero)
+```
+
+```{r}
+plot(model_zero)
+```
+
+Ostatni wykres diagnostyczny wskazuje na brak wartości odstających.
+
+```{r}
+qres_plot = function(model){
+  qres = statmod::qresid(model)
+  pred = fitted(model)
+  
+  df = data.frame(qres = qres, predictions = pred)
+  
+  ggplot(data = df, aes(x = predictions, y = qres)) + geom_point() + geom_smooth()
+}
+```
+
+```{r}
+qres_plot(model_zero)
+```
+
+Wykres reszt kwantylowych oscyluje w 0, natomiast widać niepożądane wzrosty wartości (skala wykresu jest dość duża).
+
+```{r}
+qqnorm(qresid(model_zero))
+```
+
+Reszty pochodzą z rozkładu normalnego.
+
+```{r}
+hoslem.test(x = model_zero$model$cardio, y = fitted(model_zero))
+```
+
+Test Hosmera-Lemeshowa wskazuje na niedopasowanie modelu.
+
+Wartości ciśnienia skurczowego krwi tworzą rozkłady normalne. Teoria matematyczna sugeruje zastosowanie predyktorów x i x^2.
+
+```{r}
+model_1 = glm(cardio ~ ap_hi + I(ap_hi^2), family = 'binomial', data = data)
+summary(model_1)
+```
+
+Wszystkie współczynniki są istotne statystycznie. Uwzględniając dodatkowo zmienną ap_hi^2 udało się zmniejszyć resztę dewiancyjną. Również kryterium AIC wskazuje na lepsze dopasowanie modelu.
+
+```{r}
+preds_plot(model_1)
+```
+
+```{r}
+plot(model_1)
+```
+
+```{r}
+qres_plot(model_1)
+```
+
+Po uwzględnieniu dodatkowej zmiennej, wykres reszt kwantylowych znacznie się poprawił. 
+
+```{r}
+qqnorm(statmod::qresid(model_1))
+```
+
+Reszty dalej pochodzą z rozkładu normalnego.
+
+```{r}
+hoslem.test(x = model_1$model$cardio, y = fitted(model_1))
+```
+
+Mimo uwzględnienia dodatkowej zmiennej, test wskazuje na dalsze niedopasowanie modelu.
+
+```{r}
+anova(model_zero, model_1, test = 'Chisq')
+```
+
+Test Chi^2 wskazuje na istotność zmiennej ap_hi^2.
+
+```{r}
+ggplot(data, aes(x = ap_hi, y = cardio)) + 
+  geom_point() + 
+  stat_function(fun = function(x) predict(object = model_zero, newdata = data.frame(ap_hi = x), type = 'response'), color = 'blue') + 
+  stat_function(fun = function(x) predict(object = model_1, newdata = data.frame(ap_hi = x), type = 'response'), color = 'red')
+```
+
+Podane wartości ciśnienia krwi pacjenta są wartościami średnimi z kilku pomiarów. Celem zatem będzie jak najlepsze oszacowanie ciśnienia skurczowego krwi. Z wcześniejszej analizy wiemy jaki wpływ na ciśnienie skurczowe krwi mają poszczególne czynniki.
+
+Z analizy w części I wynika, że występuje istotne zróżnicowanie ciśnienia skurczowego krwi względem płci. Warto zatem uwzględnić w modelu tę zmienną.
+
+```{r}
+model_2 = glm(cardio ~ ap_hi + I(ap_hi^2) + gender, family = 'binomial', 
+              data = data)
+
+summary(model_2)
+```
+
+Wszystkie współczynniki są istotne statystycznie. Dewiancja resztowa zmalała.
+
+```{r}
+preds_plot(model_2)
+```
+
+```{r}
+ggplot(data = data, aes(x = model_2$model$ap_hi, y = model_2$fitted, colour = gender)) + geom_point(aes(y = cardio)) + geom_line(linewidth = 1) + labs(x = 'ap_hi', y = 'pred')
+```
+
+```{r}
+qres_plot(model_2)
+```
+
+Wykres reszt kwantylowych delikatnie się wypłaszczył.
+
+```{r}
+qqnorm(statmod::qresid(model_2))
+```
+
+Reszty kwantylowe dalej pochodzą z rozkładu normalnego.
+
+```{r}
+anova(model_1, model_2, test = 'Chisq')
+```
+
+Test Chi^2 wskazuje na istotność włączenia zmiennej gender do modelu.
+
+```{r}
+hoslem.test(x = model_2$model$cardio, y = fitted(model_2))
+```
+
+Test Hosmera-Lemeshowa dalej wskazuje na niedopasowanie modelu.
+
+```{r}
+model_3 = glm(cardio ~ ap_hi + I(ap_hi^2) + gender * cholesterol, family = 'binomial', data = data)
+
+summary(model_3)
+```
+
+Niewszystkie współczynniki są istotne statystycznie. We wcześniejszej analizie wyszło, że efekt poziomu cholesterolu jest istotny statystycznie w każdej z norm. Mogło się to zmnienić ze względu na dodatkową zmienną ap_hi^2. Poziom cholesterolu jest powiązany z ciśnieniem skurczowym krwi, dlatego dodanie ap_hi^2 mogło zmniejszyć istotność interakcji.
+
+```{r}
+model_4 = glm(cardio ~ ap_hi + I(ap_hi^2) + gender + cholesterol, family = 'binomial', data = data)
+
+summary(model_4)
+```
+
+```{r}
+anova(model_4, model_3, test = 'Chisq')
+```
+
+Interakcja zmiennej cholesterol i gender nie jest istotna statystycznie. 
+
+```{r}
+qres_plot(model_4)
+```
+
+Wykres reszt kwantylowych troszkę się pogorszył.
+
+```{r}
+qqnorm(statmod::qresid(model_4))
+```
+
+Reszty kwantylowe pochodzą z rozkładu normalnego.
+
+```{r}
+hoslem.test(x = model_4$y, y = model_4$fitted)
+```
+
+Test Hosmera-Lemeshowa dalej wskazuje na niedopasowanie modelu.
+
+```{r}
+anova(model_2, model_4, test = 'Chisq')
+```
+
+Uwzględnienie zmiennej cholesterol w modelu jest istotne.
+
+```{r}
+model_5 = glm(cardio ~ ap_hi + I(ap_hi^2) + gender * gluc + cholesterol, family = 'binomial', data = data)
+
+summary(model_5)
+```
+
+Przy uwzględnieniu innych zmiennych, interakcja zmiennej gluc z gender zmieniła się. Zachodzi ona tylko w przypadku poziomu glukozy we krwi dużo powyżej normy, mimo wszystko nie można uprościć modelu pomijając interakcje tak jak w przypadku zmiennej cholesterol.
+
+```{r}
+qres_plot(model_5)
+```
+
+```{r}
+qqnorm(statmod::qresid(model_5))
+```
+
+```{r}
+hoslem.test(x = model_5$y, y = model_5$fitted)
+```
+
+```{r}
+anova(model_4, model_5, test = 'Chisq')
+```
+
+```{r}
+model_6 = glm(cardio ~ ap_hi + I(ap_hi^2) + gender * gluc + cholesterol + active, family = 'binomial', data = data)
+
+summary(model_6)
+```
+
+```{r}
+qres_plot(model_6)
+```
+
+```{r}
+qqnorm(statmod::qresid(model_6))
+```
+
+```{r}
+hoslem.test(x = model_6$y, y = model_6$fitted)
+```
+
+```{r}
+model_7 = glm(cardio ~ ap_hi + I(ap_hi^2) + gender * gluc + 
+                cholesterol + active + smoke, family = 'binomial', data = data)
+
+summary(model_7)
+```
+
+Po uwzględnieniu jeszcze zmiennej smoke, zmienna gendermale straciła istotność statystyczną. Nie można uprościć modelu usuwając zmienną gender, ponieważ zachodzi istotna statystycznie interakcja między gender, a gluc.
+
+```{r}
+qres_plot(model_7)
+```
+
+```{r}
+qqnorm(statmod::qresid(model_7))
+```
+
+```{r}
+hoslem.test(x = model_7$y, y = model_7$fitted)
+```
+
+```{r}
+model_8 = glm(cardio ~ ap_hi + I(ap_hi^2) + gender * gluc + cholesterol +
+                active + smoke + alco, family = 'binomial', data = data)
+
+summary(model_8)
+```
+
+Po uwzględnieniu zmiennych active, smoke oraz alco, interakcja zmiennej gluc i gender jest większa. Gendermale:gluca_norm jest na pograniczu istotności statystycznej.
+
+```{r}
+qres_plot(model_8)
+```
+
+```{r}
+qqnorm(statmod::qresid(model_8))
+```
+
+```{r}
+hoslem.test(x = model_8$y, y = model_8$fitted)
+```
+
+```{r}
+model_9 = glm(cardio ~ ap_hi + I(ap_hi^2) + gender * gluc + cholesterol +
+                active + smoke + alco + BMI, family = 'binomial', data = data)
+
+summary(model_9)
+```
+
+Po uwzględnieniu zmiennj BMI, gendermale jest na pograniczu istotności statystycznej.
+
+```{r}
+qres_plot(model_9)
+```
+
+```{r}
+qqnorm(statmod::qresid(model_9))
+```
+
+```{r}
+hoslem.test(x = model_9$y, y = model_9$fitted)
+```
+
+```{r}
+model_10 = glm(cardio ~ ap_hi + I(ap_hi^2) + gender * gluc + cholesterol +
+                active + smoke + alco + BMI + I(BMI^2), family = 'binomial',
+               data = data)
+
+summary(model_10)
+```
+
+```{r}
+qres_plot(model_10)
+```
+
+```{r}
+qqnorm(statmod::qresid(model_10))
+```
+
+```{r}
+hoslem.test(x = model_10$y, y = model_10$fitted)
+```
+
+### WNIOSKI
+
+- Występuje problem z nadmierną dyspersją
+- Interakcja zmiennej cholesterol i gender nie jest istotna statystycznie
+- Uwzględnienie predyktorów x i x^2 zmiennych ciągłych o rozkładzie normalnym daje lepsze efekty
+
+# Część III
+
+W analize nie zostały uwzględnione jeszcze dwie zmienne: ap_lo - ciśnienie rozkurczowe krwi, age - wiek. Logika podpowiada, że starsze osoby są bardziej narażone na choroby układu krążenia, zatem warto przeanalizować i uwzględnić zmienną age.
+
+**HIPOTEZA:**
+Czy osoby starsze mają większą szanse posiadania choroby układu krążenia?
+
+```{r}
+ggplot(data = data, aes(x = age)) + geom_histogram(bins = 10)
+```
+
+```{r}
+model.zero = glm(cardio ~ age, family = 'binomial', data = data)
+summary(model.zero)
+```
+
+```{r}
+ggplot(data = data, aes(x = model.zero$model$age, y = model.zero$fitted)) +
+  geom_point(aes(y = cardio)) + geom_line(linewidth = 1, colour = 'blue') +
+  labs(x = 'age', y = 'pred')
+```
+
+```{r}
+p = exp(-4.08 + 40 * 0.074)
+1 - (1/(1+p))
+```
+
+Prawdopodobieństwo, że osoba mająca 40 lat ma chorobę układu krążenia wynosi 0.25
+
+```{r}
+q = exp(-4.08 + 60 * 0.074)
+1 - (1/(1+q))
+```
+
+Prawdopodobieństwo, że osoba mająca 60 lat ma chorobę układu krążenia wynosi 0.59
+
+```{r}
+ggplot(data = data, aes(x = age, fill = gender)) + geom_histogram(bins = 10)
+```
+
+```{r}
+ggplot(data = data, aes(x = as.factor(cardio), y = age, fill = gender)) + geom_boxplot()
+```
+
+Osoby chore mają średnio większy wiek od osób zdrowych, niezależnie od płci. 
+
+```{r}
+interaction.plot(x.factor = data$age,
+                 trace.factor = data$gender,
+                 response = data$cardio)
+```
+
+Brak interakcji między zmienną gender i age.
+
+Prawdopodobieństwo posiadania choroby wzrasta w podobnym tempie zarówno u kobiet jak i u mężczyzn względem wzrostu wieku.
+
+Wraz z wiekiem wzrasta ciśnienie krwi. Można zatem sprawdzić jaki wpływ ma wzrost wieku na ciśnienie krwi w obu grupach.
+
+```{r}
+interaction.plot(x.factor = data$age,
+                 trace.factor = data$cardio,
+                 response = data$ap_hi)
+```
+
+```{r}
+ggplot(data = data, aes(x = age, y = ap_hi, group = cardio, colour = cardio)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+```{r}
+anova(glm(cardio ~ ap_hi + age, family = 'binomial', data = data),
+      glm(cardio ~ ap_hi * age, family = 'binomial', data = data),
+      test = 'Chisq')
+```
+
+Osoby chore mają stale wysokie ciśnienie - wraz z wiekiem ich ciśnienie skurczowe krwi praktycznie nie rośnie. U osób zdrowych cisnienie skurczowe krwi rośnie wraz z wiekiem.
+
+```{r}
+model_11 = glm(cardio ~ ap_hi * age + gender, family = 'binomial', 
+               data = data)
+summary(model_11)
+```
+
+```{r}
+qres_plot(model_11)
+```
+
+```{r}
+qqnorm(statmod::qresid(model_11))
+```
+
+Reszty kwantylowe pochodzą z rozkładu normalnego. Widoczne są delikatne ogony na krańcach.
+
+```{r}
+hoslem.test(x = model_11$y, y = model_11$fitted)
+```
+
+Test Hosmera-Lemeshowa wskazuje na niedopasowanie modelu.
+
+Zmienna BMI we wcześniejszych analizach okazała się bardzo istotna w oszacowaniu prawdopodobieństwa posiadania choroby układu krążenia u pacjenta. Wraz z wiekiem zazwyczaj waga ciała rośnie, co za tym idzie, BMI również rośnie. Można zatem sprawdzić powiązanie zmiennych age i BMI.
+
+```{r}
+ggplot(data = data, aes(x = age, y = BMI, group = cardio, colour = cardio)) + geom_point() + geom_smooth(method = 'lm')
+```
+
+Brak interakcji. Tempo wzorstu BMI wraz z wiekiem jest bardzo podobne w przypadku osób zdrowych i chorych, natomiast średnia wartość BMI u osób zdrowych i chorych różni się - osoby chore mają większe BMI.
+
+```{r}
+model_12 = glm(cardio ~ ap_hi * age + gender + BMI, family = 'binomial', 
+               data = data)
+summary(model_12)
+```
+
+```{r}
+qres_plot(model_12)
+```
+
+```{r}
+qqnorm(statmod::qresid(model_12))
+```
+
+```{r}
+hoslem.test(x = model_12$y, y = model_12$fitted)
+```
+
+Tak jak wcześniej, do predyktorów ap_hi oraz BMI można dodać ich odpowiedniki ap_hi^2 oraz BMI^2.
+
+```{r}
+model_13 = glm(cardio ~ (ap_hi + I(ap_hi^2)) * age + gender + BMI + I(BMI^2),
+               family = 'binomial', data = data)
+summary(model_13)
+```
+
+```{r}
+qres_plot(model_13)
+```
+
+```{r}
+qqnorm(statmod::qresid(model_13))
+```
+
+```{r}
+hoslem.test(x = model_13$y, y = model_13$fitted)
+```
+
+Test wskazuje na niedopasowanie modelu.
+
+```{r}
+model_14 = glm(cardio ~ (ap_hi + I(ap_hi^2)) * age + gender * gluc +
+                 cholesterol + BMI + I(BMI^2) + active + smoke + alco, 
+               family = 'binomial', data = data)
+summary(model_14)
+```
+
+```{r}
+plot(model_14)
+```
+
+```{r}
+qres_plot(model_14)
+```
+
+```{r}
+qqnorm(statmod::qresid(model_14))
+```
+
+```{r}
+hoslem.test(x = model_14$y, y = model_14$fitted)
+```
+
+Model jest niedopasowany.
+
+```{r}
+anova(model_10, model_14, test =  'Chisq')
+```
+
+Uwzględnienie zmiennej age w modelu jest bardzo istotne. 
+
+Wszystkie współczynniki modelu są istotne statystycznie. Brak wartości odstających, reszty oscylują w zerze i pochodzą z rozkładu normalnego. Mimo wszystko dewiancja resztowa jest znacznie za duża - test Hosmera-Lemeshowa wskazuje na niedopasowanie modelu. Tak jak wcześniej występuje problem z nadmierną dyspersją. Można zatem spróbować zmienić rodzinę rozkładu z binomial na quasibinomial, wówczas zmieni się parametr dyspersji.
+
+```{r}
+model_update = update(model_14, family = quasibinomial)
+summary(model_update)
+```
+
+Odchylenia standardowe współczynników delikatnie wzrosły. Parametr dyspersji zmienił się z 1 na zaledwie 1.037.
+
+```{r}
+anova(model_update, test = 'F')
+```
+
+Wszystkie współczynniki modelu i ich powiązania są istotne statystycznie.
+
+### WNIOSKI
+
+- Dalej występuje problem z nadmierną dyspersją 
+- Osoby chore są z reguły starsze
+- U osób chorych ciśnienie skurczowe krwi praktycznie nie rośnie z wiekiem
+- U osób zdrowych ciśnienie skurczowe krwi rośnie wraz z wiekiem
+- Wiek jest bardzo istotny w określeniu p.p posiadania choroby układu krążenia
+
+Informacje o aktywności, spożywaniu alkoholu i paleniu są subiektywną oceną pacjenta. Skala 0-1 w przypadku aktywności może być zbyt mała aby dobrze określić wpływ aktywności fizycznej na ciśnienie krwi. Również wyniki samego ciśnienia skurczowego krwi są mocno zaokrąglone - wartości w większości zmieniają się co 5 mm/Hg. Wszystko to może właśnie spowodować niedopasowanie modelu. Również nieuwzglednienie zmiennej ap_lo - ciśnienie rozkurczowe krwi - może się do tego przyczynić. Mimo dużej korelacji ap_lo z ap_hi ~ 0.7, pewnie warto by było się jej bliżej przyjrzeć i ewentualnie uwzględnić w modelu.
+
